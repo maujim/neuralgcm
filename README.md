@@ -28,21 +28,32 @@ python -m neuralgcm.mlx --steps 1 --output forecast.nc
 
 ## Local browser explorer
 
-On a prepared Apple Silicon Mac, start the offline browser interface at
-`http://127.0.0.1:8765` by double-clicking
+On a prepared Apple Silicon Mac, double-click
 `launch/NeuralGCM Explorer.app` (see [installation](docs/installation.md)).
-Alternatively, from the project root with its prepared `.venv`, run:
+The app opens the offline browser interface; after setup, this prepared
+launcher is the only entry point needed, with no Terminal steps. Launching it
+starts a local server process bound to loopback. The project's verification
+services are not left running in the background after testing. For development,
+from the project root with its prepared
+`.venv`, you can instead run:
 ```sh
 .venv/bin/python -m neuralgcm.local_app
 ```
-The server prints the local URL; open it in a browser. It binds to loopback
-only. The explorer compares two scenarios (model, duration, and seed), shows
-850 hPa atmospheric fields on globes, and plots hourly city series at the
-nearest model-grid cell.
 
-The bundled experiment starts from historical ERA5 data for 2 January 1959;
-it is not live weather, surface weather, or an official forecast. The bundled
-mini model is a toy and is identified as such; other choices are published
-production checkpoints. Place downloaded checkpoints in `models/` for the
-explorer to discover them. Checkpoint files remain local and are never opened
-through browser paths.
+See London's nearest-grid temperature under **Starting weather**. Nothing is
+predicted until you choose **Predict next hour**, which compares that
+historical starting frame with a real one-hour model prediction.
+Toggle between **Starting weather** and **1 hour later**; the interface shows
+the predicted temperature delta at that same London grid cell.
+After the first successful run, explore another city, wind, or a three-hour
+run; A/B scenarios, model, seed, and clearing queued jobs are under **Advanced**.
+
+This is an educational historical experiment, not live weather or an official
+forecast. The starting value is a reanalysis estimate, not a direct measurement;
+future values are model predictions, not subsequently observed weather. Values
+are for the 850 hPa pressure level (approximately 1.5 km above sea level), not
+street-level weather. The bundled mini model is a toy; other choices are
+published production checkpoints. MLX is the Apple Silicon execution engine
+for the same model, not a separate model, and no model training happens during
+a run. Place downloaded checkpoints in `models/` for discovery. Checkpoint
+files remain local and are never opened through browser paths.

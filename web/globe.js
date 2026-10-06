@@ -112,6 +112,7 @@ export function createGlobe(container) {
   let centerLongitude = 0;
   let centerLatitude = 0;
   let zoom = 1;
+  let location = null;
   let drag = null;
   let destroyed = false;
 
@@ -193,7 +194,6 @@ export function createGlobe(container) {
       }
       context.stroke();
     };
-
     const validFrame = frameData && range && FIELD_INFO[fieldId];
     if (validFrame) {
       const { grid, frame } = frameData;
@@ -254,6 +254,46 @@ export function createGlobe(container) {
       const points = line.map(([longitude, latitude]) => project(longitude / 10, latitude / 10));
       drawLine(points, "rgba(244, 239, 218, 0.82)", Math.max(0.7, radius * 0.0026));
     }
+    if (location) {
+      const point = project(location.longitude, location.latitude);
+      if (point[2] >= 0) {
+        const [x, y] = screenPoint(point);
+        const markerRadius = Math.max(4, Math.min(7, radius * 0.018));
+        context.beginPath();
+        context.arc(x, y, markerRadius + 3, 0, Math.PI * 2);
+        context.fillStyle = "rgba(7, 17, 27, 0.9)";
+        context.fill();
+        context.beginPath();
+        context.arc(x, y, markerRadius, 0, Math.PI * 2);
+        context.fillStyle = "#ffd166";
+        context.fill();
+        context.lineWidth = Math.max(1.5, radius * 0.005);
+        context.strokeStyle = "#102638";
+        context.stroke();
+
+        const fontSize = Math.max(11, Math.min(14, radius * 0.038));
+        context.font = `600 ${fontSize}px system-ui, sans-serif`;
+        const labelWidth = context.measureText(location.name).width;
+        const labelHeight = fontSize + 8;
+        const gap = markerRadius + 5;
+        const labelX = x + gap + labelWidth + 12 <= cx + radius
+          ? x + gap
+          : x - gap - labelWidth - 12;
+        const labelY = Math.max(cy - radius + labelHeight / 2 + 3,
+          Math.min(cy + radius - labelHeight / 2 - 3, y - fontSize));
+        context.fillStyle = "rgba(7, 17, 27, 0.94)";
+        context.beginPath();
+        context.roundRect(labelX - 6, labelY - labelHeight / 2, labelWidth + 12, labelHeight, 5);
+        context.fill();
+        context.strokeStyle = "rgba(255, 209, 102, 0.82)";
+        context.lineWidth = 1;
+        context.stroke();
+        context.fillStyle = "#fff4d2";
+        context.textBaseline = "middle";
+        context.fillText(location.name, labelX, labelY);
+      }
+    }
+
     context.restore();
     context.beginPath();
     context.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -308,6 +348,27 @@ export function createGlobe(container) {
     canvas.setAttribute("aria-label", `${kind}, ${info.label} in ${info.unit} at 850 hectopascals. Sampled model-grid values on a rotatable globe.`);
     draw();
   }
+  function setLocation(nextLocation, options = {}) {
+    if (destroyed) return;
+    if (nextLocation === null) {
+      location = null;
+      draw();
+      return;
+    }
+    if (!nextLocation || typeof nextLocation.name !== "string"
+      || !Number.isFinite(nextLocation.latitude) || !Number.isFinite(nextLocation.longitude)) return;
+
+    location = {
+      name: nextLocation.name,
+      latitude: nextLocation.latitude,
+      longitude: nextLocation.longitude,
+    };
+    if (options.focus === true) {
+      centerLongitude = location.longitude * Math.PI / 180;
+      centerLatitude = location.latitude * Math.PI / 180;
+    }
+    draw();
+  }
 
   function changeZoom(factor) {
     zoom = Math.max(0.72, Math.min(2.8, zoom * factor));
@@ -357,6 +418,7 @@ export function createGlobe(container) {
   resize();
 
   return {
+    setLocation,
     setFrame,
     resize,
     destroy() {

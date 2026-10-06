@@ -55,34 +55,46 @@ project root:
 ```
 .venv/bin/python -m neuralgcm.local_app
 ```
-Open the printed URL (normally `http://127.0.0.1:8765`) in a browser. The
-interface compares two scenarios with selectable models, durations, and seeds;
-it displays 850 hPa fields on globes and hourly city charts from the nearest
-model-grid cell. Checkpoint choices are discovered from downloaded files in
-the project’s `models/` directory. Files stay local and are not served at
-browser paths.
+Open the printed URL (normally `http://127.0.0.1:8765`) in a browser. On a
+prepared Apple Silicon Mac, the double-click launcher described below starts
+this local server process for you. Inspect London's nearest-grid temperature
+under **Starting weather**, then choose **Predict next hour** to request the
+one-hour model prediction. Toggle between **Starting weather** and **1 hour
+later**; the interface shows the predicted temperature delta at that same
+London grid cell.
 
-Use **Clear queued jobs** to cancel pending forecasts and free their job slots
-immediately. A forecast that is already running continues, and completed
-results remain available.
+After the first successful run, explore another city, wind, or a three-hour
+run. A/B scenarios, model and seed selection, and **Clear queued jobs** are
+under **Advanced**. Clearing cancels queued jobs only; a forecast already
+running continues, and completed results remain available.
 
-The bundled run uses historical ERA5 initial conditions from 2 January 1959,
-not live weather or an official forecast; its 850 hPa fields are not surface
-weather. The bundled mini model is a toy, distinct from the published
-production checkpoints. Scenario seed controls stochastic models; deterministic
-models retain the seed for provenance without a stochastic effect.
+The interface displays 850 hPa atmospheric fields on globes and hourly city
+charts from the nearest model-grid cell. Checkpoint choices are discovered from
+downloaded files in the project’s `models/` directory. Files stay local and are
+not served at browser paths.
+
+The bundled starting conditions are historical ERA5 reanalysis from 2 January
+1959, an estimate rather than a direct measurement. The future values are
+model predictions, not subsequently observed weather; this is not live weather
+or an official forecast. 850 hPa is approximately 1.5 km above sea level, not
+surface/street-level weather. The bundled mini model is a toy, distinct from
+published production checkpoints. MLX is an execution engine for the same
+model, not another model, and no training occurs during a run. Scenario seed
+controls stochastic models; deterministic models retain the seed for
+provenance without a stochastic effect.
 
 ## Launch the local explorer on macOS
 
 The double-clickable app is `launch/NeuralGCM Explorer.app`. Keep it inside
 the project’s `launch` folder: it locates the prepared project beside itself.
-On a prepared Apple Silicon Mac, double-click it to start the local server and
-open the browser. It binds only to `127.0.0.1`; if the default port 8765 is in
-use, it selects the next free port in the range 8765–8775. It reuses an existing
-NeuralGCM explorer server in that range.
+On a prepared Apple Silicon Mac, double-click it to start the local server
+process and open the browser; after setup, this is the only entry point needed,
+with no Terminal steps. It binds only to `127.0.0.1`; if the default port 8765
+is in use, it selects the next free port in the range 8765–8775. It reuses an
+existing NeuralGCM explorer server in that range.
 
 This launcher is not a self-contained Python distribution. The project must
-already have its compatible prepared `.venv`, the bundled demo data, and any
+already have its compatible prepared `.venv` and bundled demo data, and any
 desired downloaded checkpoints in `models/`. It does not install Python or
 dependencies, or download checkpoints. Missing prerequisites are reported in
 a macOS dialog.
