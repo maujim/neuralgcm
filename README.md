@@ -12,3 +12,16 @@ for weather and climate simulation.
     - Trained model weights: [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
 
 To stay up to date on NeuralGCM, **[subscribe to our mailing list](https://groups.google.com/g/neuralgcm-announce)**!
+
+## Apple Silicon MLX
+
+Install the optional backend with `pip install -e '.[mlx]'`. JAX remains
+required for checkpoint setup and tracing; forecasts execute with MLX. Import
+`PressureLevelModel` from `neuralgcm.mlx`:
+```python
+from neuralgcm.mlx import PressureLevelModel
+```
+Run the bundled executable to write a one-step forecast to `forecast.nc`:
+```sh
+python -m neuralgcm.mlx --steps 1 --output forecast.nc
+```

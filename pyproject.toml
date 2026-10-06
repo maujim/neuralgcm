@@ -46,3 +46,11 @@ tests = [
     "chex",
     "pytest",
 ]
+mlx = [
+    "mlx>=0.32.3; platform_system == 'Darwin' and platform_machine == 'arm64'",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: heavyweight real-model tests; run serially without xdist or concurrent model gates",
+]
