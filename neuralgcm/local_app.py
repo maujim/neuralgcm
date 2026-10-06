@@ -96,6 +96,8 @@ class _ForecastServer(ThreadingHTTPServer):
         self.job_lock = threading.RLock()
         self.work: queue.Queue[str | None] = queue.Queue()
         self.models: dict[str, Any] = {}
+        self._initial_snapshot: dict[str, Any] | None = None
+        self._initial_lock = threading.Lock()
         self._closing = False
         self._worker_thread = threading.Thread(target=_worker,
                                                args=(self,),
@@ -549,10 +551,63 @@ class _Handler(BaseHTTPRequestHandler):
         path = urllib.parse.urlsplit(self.path).path
         if path == '/api/config':
             self._send_json(200, _config())
+        elif path == '/api/initial':
+            try:
+                payload = self._get_initial_snapshot()
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    'Unable to load the archived initial conditions')
+                _error(self, 500, 'initial_unavailable',
+                       'Historical initial conditions are unavailable.')
+                return
+            self._send_json(200, payload)
         elif path.startswith('/api/jobs/'):
             self._get_job(path)
         else:
             self._static(path)
+
+    def _get_initial_snapshot(self) -> dict[str, Any]:
+        cached = self.server._initial_snapshot
+        if cached is not None:
+            return cached
+        with self.server._initial_lock:
+            cached = self.server._initial_snapshot
+            if cached is None:
+                from neuralgcm import demo
+                from neuralgcm.legacy import gin_utils, model_builder
+                import xarray
+
+                checkpoint = demo.load_checkpoint_tl63_stochastic()
+                aux_dataset = xarray.Dataset.from_dict(
+                    checkpoint['aux_ds_dict'])
+                model_config = (checkpoint['model_config_str'].replace(
+                    'GridWithWavenumbers.radius = None',
+                    'GridWithWavenumbers.radius = 1.0',
+                ) + '\n\n' + '\n'.join([
+                    'GridTL63.radius = 1.0',
+                    'GridTL127.radius = 1.0',
+                    'GridTL255.radius = 1.0',
+                ]))
+                with gin_utils.specific_config(model_config):
+                    coords = model_builder.coordinate_system_from_dataset(
+                        aux_dataset)
+                dataset = demo.load_data(coords)
+                raw_time = dataset.isel(time=0)
+                grid, lat_indices, lon_indices = _grid(raw_time)
+                frame = {
+                    'index': 0,
+                    'valid_time': _iso(dataset.time.values[0]),
+                    'lead_hours': 0,
+                    'kind': 'initial_reanalysis',
+                    'fields': _frame_fields(raw_time, lat_indices, lon_indices)
+                }
+                cached = {
+                    'grid': grid,
+                    'frame': frame,
+                    'provenance': _provenance(),
+                }
+                self.server._initial_snapshot = cached
+        return cached
 
     def do_POST(self) -> None:
         # Rejected requests may leave unread bodies. Closing avoids interpreting
