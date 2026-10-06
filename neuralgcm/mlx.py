@@ -250,6 +250,8 @@ def _demo_main(argv: list[str] | None = None) -> None:
     temporal_forcings = model.forcings_from_xarray(dataset)
     model._log_metadata = model._operation_metadata()
     model._log_metadata.update({
+        'checkpoint':
+            'bundled:neuralgcm/data/tl63_stochastic_mini.pkl',
         'requested_steps':
             args.steps,
         'seed':
