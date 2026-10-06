@@ -12,6 +12,10 @@ Implement only after Main reports **MLX verified**. A Python standard-library HT
 
 Use the verified `neuralgcm.mlx.PressureLevelModel` only: `from_checkpoint`, `demo.load_data(model.data_coords)`, `data_from_xarray`, `encode` with the requested JAX seed, and real `unroll`/`decode`, materializing MLX results. JAX constructs/traces the reference graph; numerical inference executes on MLX. No synthetic frames, substitute models, JAX inference fallback, or interpolated future predictions. Display raw initial reanalysis separately from decoded future predictions. Support every downloaded production checkpoint compatible with this verified pressure-level API; incompatible/unverified models remain visible with a specific disabled reason rather than masquerading as supported. Main supplies the verified support list.
 
+Keep at most the last constructed model cached; release it before loading a different checkpoint. On the 24 GiB host, the 0.7° model alone can retain approximately 9–16 GiB of traced constants. Enable the existing `neuralgcm.inference` INFO structured console logger for model configuration, timings, cache profile and synchronized memory; do not create persistent logs by default.
+
+Build persistence forcings from **only** `dataset[model.forcing_variables]`, reindexed hourly from initialization through the requested horizon using the initial historical values, then call `model.forcings_from_xarray`. Future forcing timestamps describe the declared persistence assumption, not fresh observations. Do not duplicate all pressure-level weather arrays or relax the model's forcing-time tolerance.
+
 Checkpoint IDs map only to these trusted local files under `models/`: `deterministic_0_7_deg` → `v1/deterministic_0_7_deg.pkl`, `deterministic_1_4_deg` → `v1/deterministic_1_4_deg.pkl`, `deterministic_2_8_deg` → `v1/deterministic_2_8_deg.pkl`, `stochastic_1_4_deg` → `v1/stochastic_1_4_deg.pkl`, `stochastic_precip_2_8_deg` → `v1_precip/stochastic_precip_2_8_deg.pkl`, and `stochastic_evap_2_8_deg` → `v1_precip/stochastic_evap_2_8_deg.pkl`. `toy_tl63` uses `demo.load_checkpoint_tl63_stochastic()`. Never accept browser-supplied filesystem paths or arbitrary pickles. Downloads are a separate, pre-existing setup operation.
 
 ## Weather semantics
@@ -20,7 +24,7 @@ All displayed fields are **850 hPa lower-atmosphere values**, approximately 1.5 
 
 ## Exact HTTP/JSON contract (version 1)
 
-All responses use JSON except static assets. API errors have `{ "error": { "code": "invalid_request", "message": "Human-readable explanation" } }` with an appropriate non-2xx status. Reject cross-origin mutation and invalid Host headers; bind only to `127.0.0.1`. JSON numbers must be finite; a non-finite forecast fails the job, never becomes invented zero values. IDs are server-generated and job/model lookup is allowlisted. Limit in-memory finished jobs and return a clear capacity error rather than unbounded retention.
+All responses use JSON except static assets. API errors have `{ "error": { "code": "invalid_request", "message": "Human-readable explanation" } }` with an appropriate non-2xx status. Reject cross-origin mutation and invalid Host headers; bind only to `127.0.0.1`. JSON numbers must be finite; a non-finite forecast fails the job, never becomes invented zero values. IDs are server-generated and job/model lookup is allowlisted. Bound in-memory job retention and return a clear capacity error rather than retaining records without limit; cancelled jobs are reclaimable like completed and failed jobs.
 
 ### `GET /api/config`
 
@@ -36,9 +40,13 @@ Returns `{ "schema_version": 1, "models": Model[], "defaults": { "model_id": "to
 
 Accept exactly `{ "model_id": string, "duration_hours": 1|3|6|12|24, "seed": integer }`, seed in `[0, 4294967295]`; reject unknown fields/types (including boolean integers). Reply `202` with a `Job`. Deterministic models retain the submitted seed in provenance but label it as having no stochastic effect. Scenarios are independent jobs; the UI submits at most two and labels them A/B. A queued job is not falsely described as running.
 
+### `POST /api/jobs/clear`
+
+Accept exactly `{}` and return `200` with `{ "cleared_count": integer }`. Cancel only jobs that are still queued; atomically set their `status` and `phase` to `"cancelled"` and remove their queued work items so job capacity is immediately reusable. A job already transitioned to `running` continues without interruption, and completed jobs and their frames remain available. A cancelled job reports 0 completed steps, its original total steps, no available frames, and `error: null`. Apply the same Host/Origin, JSON content-type, body-size, and duplicate-field protections as other mutations.
+
 ### `GET /api/jobs/{job_id}`
 
-Return `Job`: `{ "id": string, "status": "queued"|"running"|"completed"|"failed", "phase": "queued"|"loading"|"encoding"|"forecasting"|"completed"|"failed", "progress": { "completed_steps": integer, "total_steps": integer, "fraction": number }, "request": { "model_id": string, "duration_hours": integer, "seed": integer }, "available_frames": integer, "frame_times": ISO8601[], "grid": Grid|null, "provenance": Provenance, "error": { "code": string, "message": string }|null }`.
+Return `Job`: `{ "id": string, "status": "queued"|"running"|"completed"|"failed"|"cancelled", "phase": "queued"|"loading"|"encoding"|"forecasting"|"completed"|"failed"|"cancelled", "progress": { "completed_steps": integer, "total_steps": integer, "fraction": number }, "request": { "model_id": string, "duration_hours": integer, "seed": integer }, "available_frames": integer, "frame_times": ISO8601[], "grid": Grid|null, "provenance": Provenance, "error": { "code": string, "message": string }|null }`.
 
 Steps are completed hourly output intervals, not fabricated wall-clock estimates; fraction is 0 while loading/encoding and reaches 1 only on completion. `frame_times` enumerates only available frames, including the initial reanalysis at index 0; `available_frames` is its length. `Grid` is `{ "latitudes": number[], "longitudes": number[], "level_hpa": 850, "layout": "latitude-major", "display_stride": { "latitude": integer, "longitude": integer } }`. Longitudes use `[-180,180)`, both coordinate arrays are ascending, and field arrays are flattened in `[latitude][longitude]` order. Return the exact sampled coordinates, not an equispaced substitute. Limit visualization to approximately 96 longitudes × 48 latitudes by integer striding; no forecast-value interpolation.
 
@@ -53,6 +61,8 @@ Return `{ "index": integer, "valid_time": ISO8601, "lead_hours": integer, "kind"
 `web/globe.js` and `web/globe.css` own a drag-rotatable, zoomable canvas globe and color legend, with a visible drag/zoom hint and accessible controls. Export `createGlobe(container)` returning `{ setFrame({grid, frame, field, range}), resize(), destroy() }`. `range` is `{min:number,max:number}` supplied identically for both scenarios; field is a contract field ID. The globe module imports its stylesheet through a link in `index.html`, not a JS CSS import. `setFrame` accepts `frame: null` to render an honest empty state. Plot actual sampled grid cells on the visible hemisphere; show field/unit labels and common color scales. No predictions are generated in JavaScript.
 
 The shell uses one shared frame index/time and field selector for A/B, and city charts show actual returned lead-time values. If a scenario has not produced the selected frame, show waiting/unavailable rather than substituting another time. Distinguish the initial reanalysis and predictions by text and chart styling, not color alone. City labels include coordinates and nearest-grid caveat. Play/pause and timeline scrubbing operate only on available data. Side-by-side is optional until B is enabled; disabling B must not silently erase A.
+
+Visual direction: a compact scientific WeatherLab console in deep navy/slate with warm-white text and restrained cyan/amber accents. Place scenario controls in a compact left rail, keep the globe workspace dominant, use a compact shared timeline and legible city charts, and collapse verbose provenance in accessible details. Preserve visible historical/toy warnings. The Earth view uses genuine bundled offline geographic outlines and graticules over contiguous sample cells, with each cell retaining its exact returned weather value; no fabricated continents or interpolated weather. Maintain responsive layouts and visible keyboard focus without changing inference or interaction behavior.
 
 ## Acceptance / implementation advice
 

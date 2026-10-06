@@ -115,6 +115,38 @@ class _ForecastServer(ThreadingHTTPServer):
         self.models.clear()
         super().server_close()
 
+    def _clear_queued_jobs(self) -> int | None:
+        """Cancel all queued jobs and remove their work items atomically."""
+        with self.job_lock:
+            if self._closing:
+                return None
+            queued = [
+                job for job in self.jobs.values() if job['status'] == 'queued'
+            ]
+            for job in queued:
+                job['status'], job['phase'] = 'cancelled', 'cancelled'
+
+            # A worker may already have dequeued an item but not yet acquired
+            # job_lock. Marking jobs first ensures it observes cancellation.
+            retained: list[str | None] = []
+            while True:
+                try:
+                    job_id = self.work.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if job_id is None:
+                        retained.append(job_id)
+                    else:
+                        job = self.jobs.get(job_id)
+                        if job is None or job['status'] != 'cancelled':
+                            retained.append(job_id)
+                finally:
+                    self.work.task_done()
+            for job_id in retained:
+                self.work.put_nowait(job_id)
+            return len(queued)
+
 
 def create_server(
     host: str = '127.0.0.1',
@@ -150,7 +182,6 @@ def _provenance(model_id: str | None = None,
             'Historical reanalysis experiment, not live weather or a public forecast.',
             'Values are on the 850 hPa pressure surface (about 1.5 km altitude), not surface weather.',
             'Ocean forcing remains fixed to the historical sample; no future observations are implied.',
-            'The bundled mini model is an explicitly labeled toy.',
         ],
     }
     if model_id is not None:
@@ -167,6 +198,9 @@ def _provenance(model_id: str | None = None,
             'display_grid':
                 'Exact model coordinates, sorted and normalized; integer-strided to at most 48 latitudes × 96 longitudes.',
         })
+        if m['kind'] == 'toy':
+            provenance['warnings'].append(
+                'The bundled mini model is an explicitly labeled toy.')
         if not m['stochastic']:
             provenance['warnings'].append(
                 'This deterministic model has no stochastic effect from the submitted seed.'
@@ -333,7 +367,7 @@ def _execute(server: _ForecastServer, job_id: str) -> None:
         from neuralgcm import demo, inference_logging
 
         with server.job_lock:
-            job['status'], job['phase'] = 'running', 'loading'
+            job['phase'] = 'loading'
         model = _model_for(server, model_id)
         dataset = demo.load_data(model.data_coords)
         epoch = np.datetime64(dataset.time.values[0], 'h')
@@ -417,6 +451,11 @@ def _worker(server: _ForecastServer) -> None:
         try:
             if job_id is None:
                 return
+            with server.job_lock:
+                job = server.jobs.get(job_id)
+                if job is None or job['status'] != 'queued':
+                    continue
+                job['status'], job['phase'] = 'running', 'loading'
             _execute(server, job_id)
         finally:
             server.work.task_done()
@@ -527,7 +566,8 @@ class _Handler(BaseHTTPRequestHandler):
             _error(self, 403, 'cross_origin',
                    'Cross-origin requests are not allowed.')
             return
-        if urllib.parse.urlsplit(self.path).path != '/api/jobs':
+        path = urllib.parse.urlsplit(self.path).path
+        if path not in ('/api/jobs', '/api/jobs/clear'):
             _error(self, 404, 'not_found', 'No such API endpoint.')
             return
         if self.headers.get_content_type() != 'application/json':
@@ -536,12 +576,25 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             body = self._body_json()
-            if not isinstance(body, dict) or set(body) != {
+            if path == '/api/jobs/clear':
+                if not isinstance(body, dict) or body:
+                    raise ValueError(
+                        'Request body must be exactly an empty JSON object.')
+            elif not isinstance(body, dict) or set(body) != {
                     'model_id', 'duration_hours', 'seed'
             }:
                 raise ValueError(
                     'Request must contain exactly model_id, duration_hours, and seed.'
                 )
+            if path == '/api/jobs/clear':
+                cleared_count = self.server._clear_queued_jobs()
+                if cleared_count is None:
+                    _error(self, 503, 'server_closing',
+                           'The local forecast server is shutting down.')
+                    return
+                self._send_json(200, {'cleared_count': cleared_count})
+                return
+
             model_id, duration, seed = body['model_id'], body[
                 'duration_hours'], body['seed']
             if not isinstance(model_id, str):
@@ -571,9 +624,10 @@ class _Handler(BaseHTTPRequestHandler):
                 _error(self, 503, 'server_closing',
                        'The local forecast server is shutting down.')
                 return
-            finished = sorted((j for j in self.server.jobs.values()
-                               if j['status'] in ('completed', 'failed')),
-                              key=lambda j: j['created'])
+            finished = sorted(
+                (j for j in self.server.jobs.values()
+                 if j['status'] in ('completed', 'failed', 'cancelled')),
+                key=lambda j: j['created'])
             while len(self.server.jobs) >= _MAX_JOBS and finished:
                 del self.server.jobs[finished.pop(0)['id']]
             if len(self.server.jobs) >= _MAX_JOBS:

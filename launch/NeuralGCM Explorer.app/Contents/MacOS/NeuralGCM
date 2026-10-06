@@ -1,0 +1,69 @@
+#!/bin/bash
+set -u
+
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd -P)"
+PROJECT="$(cd "$APP_DIR/../.." 2>/dev/null && pwd -P)"
+
+show_error() {
+  /usr/bin/osascript -e 'on run argv' -e 'display dialog (item 1 of argv) with title "NeuralGCM Explorer" buttons {"OK"} default button "OK" with icon stop' -e 'end run' "$1" >/dev/null 2>&1
+}
+
+if [[ ! -f "$PROJECT/neuralgcm/local_app.py" ]]; then
+  show_error "Cannot find the NeuralGCM project beside this app. Keep the app inside the project's launch folder. Source files alone are not a self-contained Python distribution."
+  exit 1
+fi
+if [[ ! -x "$PROJECT/.venv/bin/python" ]]; then
+  show_error "The prepared project environment is missing at:\n$PROJECT/.venv\nSet up the compatible Apple Silicon Python environment before launching. This app does not install Python or dependencies."
+  exit 1
+fi
+if [[ ! -f "$PROJECT/neuralgcm/data/tl63_stochastic_mini.pkl" ]]; then
+  show_error "Required bundled demo data is missing. Restore the project data before launching. This app never downloads models."
+  exit 1
+fi
+
+# Reuse a compatible server on the app's bounded port range; skip unrelated services.
+for PORT in {8765..8775}; do
+  if RESPONSE="$(/usr/bin/curl --silent --fail --max-time 2 "http://127.0.0.1:$PORT/api/config" 2>/dev/null)" &&
+     printf '%s' "$RESPONSE" | "$PROJECT/.venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")==1 and any(m.get("id")=="toy_tl63" for m in d.get("models", []))' >/dev/null 2>&1; then
+    /usr/bin/open "http://127.0.0.1:$PORT/"
+    exit 0
+  fi
+done
+
+# Select a free port instead of failing because an unrelated app owns 8765.
+PORT=""
+for CANDIDATE in {8765..8775}; do
+  if ! /usr/bin/nc -z 127.0.0.1 "$CANDIDATE" >/dev/null 2>&1; then
+    PORT="$CANDIDATE"
+    break
+  fi
+done
+if [[ -z "$PORT" ]]; then
+  show_error "Ports 8765–8775 are all in use. Close a local service and try again."
+  exit 1
+fi
+
+# Open the browser only after the loopback server is listening.
+(
+  cd "$PROJECT" || exit 1
+  exec "$PROJECT/.venv/bin/python" -m neuralgcm.local_app \
+    --host 127.0.0.1 --port "$PORT" --open-browser
+) &
+SERVER_PID=$!
+for _ in {1..120}; do
+  if RESPONSE="$(/usr/bin/curl --silent --fail --max-time 1 "http://127.0.0.1:$PORT/api/config" 2>/dev/null)" &&
+     printf '%s' "$RESPONSE" | "$PROJECT/.venv/bin/python" -c 'import json,sys; d=json.load(sys.stdin); assert d.get("schema_version")==1 and any(m.get("id")=="toy_tl63" for m in d.get("models", []))' >/dev/null 2>&1; then
+    exit 0
+  fi
+  if ! /bin/kill -0 "$SERVER_PID" 2>/dev/null; then
+    show_error "NeuralGCM could not start on port $PORT. Review the prepared environment and try again."
+    exit 1
+  fi
+  /bin/sleep 0.25
+done
+if /bin/kill -0 "$SERVER_PID" 2>/dev/null; then
+  /bin/kill "$SERVER_PID" 2>/dev/null || true
+fi
+show_error "NeuralGCM did not become ready on 127.0.0.1:$PORT. Try launching again."
+exit 1
+

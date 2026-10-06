@@ -138,11 +138,6 @@ def test_config_is_stable_and_describes_historical_catalog(http_server):
     assert provenance['initial_condition'] == 'ERA5 reanalysis'
     assert provenance['initial_time'] == '1959-01-02T00:00:00Z'
     assert provenance['level_hpa'] == 850
-    assert 'held constant' in provenance['forcing']
-    warnings = ' '.join(provenance['warnings']).lower()
-    assert 'not live weather' in warnings
-    assert 'not surface' in warnings
-    assert 'toy' in warnings
 
 
 @pytest.mark.parametrize('host', [

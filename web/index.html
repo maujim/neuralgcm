@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Local NeuralGCM Explorer</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="globe.css">
+</head>
+<body>
+<header class="topbar"><div><p class="eyebrow">WEATHERLAB <span>· LOCAL EXPERIMENT</span></p><h1>NeuralGCM explorer</h1><p class="subtitle">Compare historical atmosphere simulations</p></div><span class="local-badge">ON-DEVICE</span></header>
+<main>
+<section class="notice" aria-label="Experiment caution"><strong>Historical experiment, not live weather.</strong> ERA5 initial conditions · 2 Jan 1959 · 850 hPa (~1.5 km), not surface weather. Nearest model-grid values are shown.</section>
+<div class="workspace">
+<aside class="controls" aria-labelledby="controls-title"><div class="section-kicker">SETUP</div><h2 id="controls-title">Scenarios</h2><div class="scenario-grid">
+<fieldset class="scenario" id="scenario-a"><legend>Scenario A</legend><label>Model<select id="model-a"></select></label><label>Duration<select id="duration-a"></select></label><label>Seed<input id="seed-a" type="number" min="0" max="4294967295" step="1" value="0"></label><button id="run-a">Run scenario A</button><p class="seed-help" id="seed-help-a"></p></fieldset>
+<fieldset class="scenario" id="scenario-b"><legend>Scenario B</legend><label>Model<select id="model-b"></select></label><label>Duration<select id="duration-b"></select></label><label>Seed<input id="seed-b" type="number" min="0" max="4294967295" step="1" value="1"></label><button id="run-b">Run scenario B</button><p class="seed-help" id="seed-help-b"></p></fieldset>
+</div><button class="link-button" id="toggle-b" type="button">Disable scenario B</button><div class="run-status" id="run-status" role="status"></div></aside>
+<section class="visualization" aria-label="Atmosphere comparison"><div class="view-toolbar"><label>Atmospheric field<select id="field-select"></select></label><button id="play" type="button">▶ Play</button><span id="timeline-label">Initial reanalysis</span></div><div class="timeline"><input id="timeline" type="range" min="0" max="0" value="0" aria-label="Forecast time"><div class="ticks" id="timeline-ticks"></div></div><div class="job-status-toolbar"><div id="job-list" class="job-status-strip" aria-label="Forecast status" aria-live="polite"></div><div class="clear-queued"><button id="clear-queued" type="button">Clear queued jobs</button><span>Running forecast continues.</span></div></div><div id="clear-status" class="clear-status" role="status" aria-live="polite"></div><div class="globe-layout"><div class="globe-scenarios"><article class="globe-card"><h2>Scenario A</h2><div id="globe-a" class="globe-container"><p class="empty-state">Run a scenario to load the sampled globe.</p></div></article><article class="globe-card" id="globe-card-b"><h2>Scenario B</h2><div id="globe-b" class="globe-container"><p class="empty-state">Run scenario B to compare.</p></div></article></div><aside class="legend-panel" id="legend-panel"></aside></div></section>
+</div>
+<section class="city-section"><div class="city-head"><div><h2>City evolution</h2><p class="small">Nearest returned 850 hPa model-grid cell; not a station measurement or downscaled forecast.</p></div><label>City search<input id="city-search" type="search" placeholder="Search bundled cities" autocomplete="off"></label></div><div id="city-results" class="city-results"></div><div id="city-chart" class="chart-grid"><p class="empty-state">Select a city to view hourly values.</p></div></section>
+<section class="details"><details class="provenance-details"><summary>Experiment provenance</summary><dl id="provenance"><dt>Engine</dt><dd>—</dd></dl></details></section>
+</main><footer>All processing stays on this device. No account, cloud service, or online map requests.</footer><script type="module" src="app.js"></script>
+</body></html>
